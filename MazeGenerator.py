@@ -1,84 +1,86 @@
-from Maze import Maze
-#from Qrandom import qrandom
-import random
+"""Maze generator using Eller's Algorithm with Quantum Randomness (Qiskit).
+Guarantees a fully connected, single-connected spanning tree maze where
+every cell is reachable from every other cell.
+"""
 
-def qrandom():
-    return bool(random.getrandbits(1))
+from Maze import Maze
+import Qrandom
+from collections import defaultdict
+from typing import List
 
 class MazeGenerator(object):
-    def __init__(self, w, h):
+    def __init__(self, w: int, h: int):
         self.m_W = max(1, w)
         self.m_H = max(1, h)
         self.Generate()
 
-    def InitSet(self):
-        self.m_LastSetNumber = 0 
-        self.m_Set = []
-        for i in range(self.m_W):
-            self.m_LastSetNumber += 1
-            self.m_Set.append(self.m_LastSetNumber)
+    def Generate(self) -> Maze:
+        self.m_Maze = Maze(self.m_W, self.m_H)
+        last_set_number = 0
+        current_sets: List[int] = [0] * self.m_W
 
-    def DestroyLeftWalls(self, y):
-        for x in range(1, self.m_W):
-            if(self.m_Set[x] != self.m_Set[x - 1] and qrandom()):
-                self.SetWay(x - 1, y, x, y)
-
-    def DestroyDownLines(self, y):
-        hasDownWay = False
+        # Initialize first row sets
         for x in range(self.m_W):
-            if(qrandom()):
-                self.SetWay(x, y, x, y + 1)
-                hasDownWay = True
-            if(x == self.m_W - 1 or self.m_Set[x] != self.m_Set[x + 1]):
-                if(hasDownWay):
-                    hasDownWay = False
+            last_set_number += 1
+            current_sets[x] = last_set_number
+
+        for y in range(self.m_H - 1):
+            # 1. Join adjacent cells in different sets with 50% quantum probability
+            for x in range(self.m_W - 1):
+                if current_sets[x] != current_sets[x + 1] and Qrandom.qrandom_bool():
+                    self.m_Maze.SetWay(self.m_Maze.GetVertex(x, y), self.m_Maze.GetVertex(x + 1, y))
+                    s_keep = current_sets[x]
+                    s_replace = current_sets[x + 1]
+                    for i in range(self.m_W):
+                        if current_sets[i] == s_replace:
+                            current_sets[i] = s_keep
+
+            # 2. Carve vertical paths down: ensure EVERY set has at least one downward connection
+            set_cells = defaultdict(list)
+            for x in range(self.m_W):
+                set_cells[current_sets[x]].append(x)
+
+            down_cols = set()
+            for s_id, cols in set_cells.items():
+                forced_col = cols[Qrandom.qrandint(0, len(cols) - 1)]
+                down_cols.add(forced_col)
+                for col in cols:
+                    if col != forced_col and Qrandom.qrandom_bool():
+                        down_cols.add(col)
+
+            for col in down_cols:
+                self.m_Maze.SetWay(self.m_Maze.GetVertex(col, y), self.m_Maze.GetVertex(col, y + 1))
+
+            # 3. Prepare sets for the next row
+            next_sets = [0] * self.m_W
+            for x in range(self.m_W):
+                if x in down_cols:
+                    next_sets[x] = current_sets[x]
                 else:
-                    self.SetWay(x, y, x, y + 1)
+                    last_set_number += 1
+                    next_sets[x] = last_set_number
+            current_sets = next_sets
 
-    def UpdateSet(self, y):
-        for x in range(self.m_W):
-            if(not self.HasPath(x, y, x, y + 1)):
-                self.m_LastSetNumber += 1
-                self.m_Set[x] = self.m_LastSetNumber
-
-    def ProcessLastLine(self):
+        # 4. Final row: join all adjacent cells that are in different sets
         y = self.m_H - 1
-        for x in range(1, self.m_W):
-            if(self.m_Set[x] != self.m_Set[x-1]):
-                self.SetWay(x, y, x - 1, y)
+        for x in range(self.m_W - 1):
+            if current_sets[x] != current_sets[x + 1]:
+                self.m_Maze.SetWay(self.m_Maze.GetVertex(x, y), self.m_Maze.GetVertex(x + 1, y))
+                s_keep = current_sets[x]
+                s_replace = current_sets[x + 1]
+                for i in range(self.m_W):
+                    if current_sets[i] == s_replace:
+                        current_sets[i] = s_keep
 
-    def Generate(self):
-        self.m_Maze = Maze(self.m_W, self.m_H)  
-        self.InitSet()
-        for y in range(self.m_H - 1):   
-            self.DestroyLeftWalls(y)
-            self.DestroyDownLines(y)
-            self.UpdateSet(y)
-        self.ProcessLastLine()
         return self.m_Maze
 
-    def MergeSet(self, x1, x2):
-        setNumToReplace = max(self.m_Set[x1], self.m_Set[x2])
-        newSetNum = min(self.m_Set[x1], self.m_Set[x2])
-        for x in range(self.m_W):
-            if(self.m_Set[x] == setNumToReplace):
-                self.m_Set[x] = newSetNum
-
-    def SetWay(self, x1, y1, x2, y2):
-        self.m_Maze.SetWay(self.m_Maze.GetVertex(x1, y1), self.m_Maze.GetVertex(x2, y2))
-        self.MergeSet(x1, x2)
-
-    def HasPath(self, x1, y1, x2, y2):
-        return self.m_Maze.HasPath(self.m_Maze.GetVertex(x1, y1), self.m_Maze.GetVertex(x2, y2))
-
-    def GetMaze(self):
+    def GetMaze(self) -> Maze:
         return self.m_Maze
+
 
 if __name__ == "__main__":
-    print('maze size: m by n')
-    m=int(input('m: '))
-    n=int(input('n: '))
-    mazeGenerator = MazeGenerator(m, n)
-    maze = mazeGenerator.GetMaze()
+    print(f"Generating quantum maze using {Qrandom.get_backend_name()}...")
+    mg = MazeGenerator(10, 6)
+    maze = mg.GetMaze()
     maze.Print()
-    print(maze.ToList())
+    print("Maze generated successfully!")
